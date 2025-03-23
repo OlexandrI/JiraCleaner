@@ -590,6 +590,463 @@
     }
   }
 
+  // 8. Workflows duplicate scanner
+  class WorkflowsDuplicateScanner extends JiraCleanerEntity {
+    constructor() {
+      super("Workflows Duplicates");
+      this.selector = "#active-workflows-table";
+      this.clean_internal_counter = 3;
+    }
+
+    isCleanRunning() {
+      return false;
+    }
+
+    clean() {
+      // Do nothing
+    }
+
+    abort() {
+      // Do nothing
+    }
+
+    addUI() {
+      const self = this;
+      JiraCleanerEntity.addButtonToPageHeader("Scan", () => self.scan());
+    }
+
+    // Розбирає один action елемент
+    parseAction(actionElem) {
+      const action = {
+        id: actionElem.getAttribute("id"),
+        name: actionElem.getAttribute("name"),
+        meta: {},
+        validators: [],
+        results: [],
+      };
+
+      // Розбираємо meta
+      const metaElems = actionElem.getElementsByTagName("meta");
+      for (let i = 0; i < metaElems.length; i++) {
+        const metaName = metaElems[i].getAttribute("name");
+        const metaValue = metaElems[i].textContent;
+        action.meta[metaName] = metaValue;
+      }
+
+      // Розбираємо validators
+      const validatorsElem = actionElem.getElementsByTagName("validators")[0];
+      if (validatorsElem) {
+        const validatorElems = validatorsElem.getElementsByTagName("validator");
+        for (let i = 0; i < validatorElems.length; i++) {
+          const validator = {
+            type: validatorElems[i].getAttribute("type"),
+            args: {},
+          };
+          const argElems = validatorElems[i].getElementsByTagName("arg");
+          for (let j = 0; j < argElems.length; j++) {
+            const argName = argElems[j].getAttribute("name");
+            const argValue = argElems[j].textContent;
+            validator.args[argName] = argValue;
+          }
+          action.validators.push(validator);
+        }
+      }
+
+      // Розбираємо results
+      const resultsElem = actionElem.getElementsByTagName("results")[0];
+      if (resultsElem) {
+        const resultElems = resultsElem.getElementsByTagName(
+          "unconditional-result"
+        );
+        for (let i = 0; i < resultElems.length; i++) {
+          const result = {
+            oldStatus: resultElems[i].getAttribute("old-status"),
+            step: resultElems[i].getAttribute("step"),
+            status: resultElems[i].getAttribute("status"),
+            postFunctions: [],
+          };
+          const postFuncsElems =
+            resultElems[i].getElementsByTagName("post-functions");
+          if (postFuncsElems) {
+            for (let j = 0; j < postFuncsElems.length; j++) {
+              const funcElems =
+                postFuncsElems[j].getElementsByTagName("function");
+              for (let k = 0; k < funcElems.length; k++) {
+                const func = {
+                  type: funcElems[k].getAttribute("type"),
+                  args: {},
+                };
+                const argElems = funcElems[k].getElementsByTagName("arg");
+                for (let m = 0; m < argElems.length; m++) {
+                  const argName = argElems[m].getAttribute("name");
+                  const argValue = argElems[m].textContent;
+                  func.args[argName] = argValue;
+                }
+                result.postFunctions.push(func);
+              }
+            }
+          }
+          action.results.push(result);
+        }
+      }
+      return action;
+    }
+
+    compareActions(action1, action2) {
+        const sameMeta =
+            JSON.stringify(action1.meta) === JSON.stringify(action2.meta);
+        const sameValidators =
+            JSON.stringify(action1.validators) === JSON.stringify(action2.validators);
+        const sameResults =
+            JSON.stringify(action1.results) === JSON.stringify(action2.results);
+        return {
+            isSame: action1.id === action2.id && action1.name === action2.name && sameMeta && sameValidators && sameResults,
+            isSameButDiffName: sameMeta && sameValidators && sameResults,
+            sameMeta,
+            sameValidators,
+            sameResults,
+        };
+    }
+
+    // Розбирає весь XML робочого процесу у структурований об’єкт
+    parseWorkflow(xml) {
+      const parsed = {};
+
+      parsed.statuses = [];
+
+      // Розбираємо initial-actions
+      const initActionsElem = xml.getElementsByTagName("initial-actions")[0];
+      parsed.initialActions = [];
+      if (initActionsElem) {
+        const actionElems = initActionsElem.getElementsByTagName("action");
+        for (let i = 0; i < actionElems.length; i++) {
+          const action = this.parseAction(actionElems[i]);
+          parsed.initialActions.push(action);
+          parsed.statuses.push(action.name);
+        }
+      }
+
+      // Розбираємо common-actions
+      const commonActionsElem = xml.getElementsByTagName("common-actions")[0];
+      parsed.commonActions = [];
+      if (commonActionsElem) {
+        const actionElems = commonActionsElem.getElementsByTagName("action");
+        for (let i = 0; i < actionElems.length; i++) {
+          const action = this.parseAction(actionElems[i]);
+          parsed.commonActions.push(action);
+          parsed.statuses.push(action.name);
+        }
+      }
+
+      // Розбираємо steps
+      const stepsElem = xml.getElementsByTagName("steps")[0];
+      parsed.steps = [];
+      if (stepsElem) {
+        const stepElems = stepsElem.getElementsByTagName("step");
+        for (let i = 0; i < stepElems.length; i++) {
+          const step = {
+            id: stepElems[i].getAttribute("id"),
+            name: stepElems[i].getAttribute("name"),
+            actions: [],
+          };
+          const actionsElem = stepElems[i].getElementsByTagName("actions")[0];
+          if (actionsElem) {
+            // Можуть бути як <action>, так і <common-action>
+            const actionElems = actionsElem.getElementsByTagName("action");
+            for (let j = 0; j < actionElems.length; j++) {
+              step.actions.push(this.parseAction(actionElems[j]));
+            }
+            const commonActionElems =
+              actionsElem.getElementsByTagName("common-action");
+            for (let j = 0; j < commonActionElems.length; j++) {
+              // Для common-action збережемо тільки id
+              step.actions.push({
+                id: commonActionElems[j].getAttribute("id"),
+              });
+            }
+          }
+
+          parsed.statuses.push(step.name);
+          parsed.steps.push(step);
+        }
+      }
+
+      return parsed;
+    }
+
+    // Функція для повного порівняння двох розібраних workflow
+    fullCompareWorkflows(parsed1, parsed2) {
+    // Порівнюємо для початку наявні статуси
+        const bHasSameStatuses = JSON.stringify(parsed1.statuses) === JSON.stringify(parsed2.statuses);
+        const uniuqeStatuses = parsed1.statuses.filter((x) => !parsed2.statuses.includes(x)).concat(parsed2.statuses.filter((x) => !parsed1.statuses.includes(x)));
+        const bHasUniqueStatuses = uniuqeStatuses.length > 0;
+        // Порівнюємо кожен action між собою та зберігаємо по назвах які однакові, а які різні
+        const actionCompare = {};
+        for (var k in parsed1.statuses) {
+            if (!parsed1.statuses.hasOwnProperty(k)) continue;
+            if (uniuqeStatuses.includes(k)) continue;
+            // Find status in both steps and compare actions
+            parsed1.steps.forEach((step1) => {
+                if (step1.name !== k) return;
+                parsed2.steps.forEach((step2) => {
+                    if (step2.name !== k) return;
+                    if (!actionCompare[k]) actionCompare[k] = {};
+                    step1.actions.forEach((action1) => {
+                        actionCompare[k][action1.id] = {
+                            isSame: false,
+                            isSameButDiffName: false,
+                            sameMeta: false,
+                            sameValidators: false,
+                            sameResults: false,
+                        };
+                        step2.actions.forEach((action2) => {
+                            if (action1.id === action2.id) {
+                                const comp = this.compareActions(action1, action2);
+                                actionCompare[k][action1.id] = comp;
+                            }
+                        });
+                    });
+                    // Тепер дивимося чи є якісь додаткові елементи в step2
+                    step2.actions.forEach((action2) => {
+                        if (!actionCompare[k][action2.id]) {
+                            actionCompare[k][action2.id] = {
+                                isSame: false,
+                                isSameButDiffName: false,
+                                sameMeta: false,
+                                sameValidators: false,
+                                sameResults: false,
+                            };
+                        }
+                    });
+                });
+            });
+        }
+        const bHasDiffActions = Object.keys(actionCompare).some((k) => {
+            return Object.keys(actionCompare[k]).some((id) => {
+                return !actionCompare[k][id].isSame;
+            });
+        });
+        const bHasDiffActionsIgnoreName = Object.keys(actionCompare).some((k) => {
+            return Object.keys(actionCompare[k]).some((id) => {
+                return actionCompare[k][id].isSameButDiffName;
+            });
+        });
+
+      // Порівнюємо кожну секцію окремо (initialActions, commonActions, steps)
+      const sameInitial =
+        JSON.stringify(parsed1.initialActions) ===
+        JSON.stringify(parsed2.initialActions);
+      const sameCommon =
+        JSON.stringify(parsed1.commonActions) ===
+        JSON.stringify(parsed2.commonActions);
+      const sameSteps =
+        JSON.stringify(parsed1.steps) === JSON.stringify(parsed2.steps);
+
+      const isSame = sameInitial && sameCommon && sameSteps;
+      const isSameButDiffActionsOrder = !bHasUniqueStatuses && !bHasDiffActions;
+      const isSameButDiffActionsOrderIgnoreName = !bHasUniqueStatuses && !bHasDiffActionsIgnoreName;
+
+      // Тепер ми хочемо ще порівняти статуси між собою, але ігноруючи пробіли, регістр та будь-які символи які не є буквами
+      const statusCompare = {};
+        parsed1.statuses.forEach((status1) => {
+            statusCompare[status1] = false;
+            parsed2.statuses.forEach((status2) => {
+                const same = status1.replace(/\W/g, "").toLowerCase() === status2.replace(/\W/g, "").toLowerCase();
+                if (same) statusCompare[status1] = true;
+            });
+        });
+      const bHasSameStatusesIgnoreSymbols = !bHasUniqueStatuses && Object.keys(statusCompare).every((k) => {
+        return statusCompare[k];
+      });
+      const isMaybeSame = isSameButDiffActionsOrderIgnoreName && bHasSameStatusesIgnoreSymbols;
+
+      return {
+        isSame,
+        bHasUniqueStatuses,
+        bHasSameStatuses,
+        isMaybeSame,
+        sameInitial,
+        sameCommon,
+        sameSteps,
+        isSameButDiffActionsOrder,
+        isSameButDiffActionsOrderIgnoreName,
+        bHasDiffActions,
+        bHasDiffActionsIgnoreName
+      };
+    }
+
+    // Метод сканування: завантажує XML для кожного workflow, розбирає його,
+    // проводить повне порівняння між парами та зберігає результати в this.workflowsData
+    scan() {
+        const names = [];
+        const rows = document.querySelectorAll(this.getRowsSelector());
+        for (let i = 1; i < rows.length; i++) {
+            const tr = rows[i];
+            const td = tr.querySelector(this.getIdSelectorForRow());
+            if (td)
+            {
+                const name = td.innerText.trim();
+                if (name) names.push(name);
+            }
+          }
+
+      if (names.length === 0) {
+        console.warn("No workflows found for scanning.");
+        return;
+      }
+      console.log("Workflow names:", names);
+
+      // Скидаємо попередні дані
+      this.workflowsData = {};
+
+      // Завантажуємо XML для кожного workflow та розбираємо його
+      const loadPromises = names.map((name) => {
+        const key = encodeURI(name.replaceAll(" ", "+")).replaceAll(":", "%3A");
+        // get host from current page
+        const host = window.location.host;
+        // get protocol from current page
+        const protocol = window.location.protocol;
+        const uri = `${protocol}//${host}/secure/admin/workflows/ViewWorkflowXml.jspa?workflowMode=live&workflowName=${key}`;
+        return fetch(uri)
+          .then((response) => response.text())
+          .then((str) => {
+            const xmlDoc = new DOMParser().parseFromString(str, "text/xml");
+            const parsed = this.parseWorkflow(xmlDoc);
+            this.workflowsData[name] = {
+              doc: xmlDoc,
+              parsed: parsed,
+              compare: {},
+              sameAs: [],
+              maybeSameAs: [],
+            };
+          })
+          .catch((err) => {
+            console.error("Error loading workflow:", name, err);
+          });
+      });
+
+      Promise.all(loadPromises).then(() => {
+        // Порівнюємо кожну пару workflow
+        for (let i = 0; i < names.length; i++) {
+          for (let j = i + 1; j < names.length; j++) {
+            const comp = this.fullCompareWorkflows(
+              this.workflowsData[names[i]].parsed,
+              this.workflowsData[names[j]].parsed
+            );
+            this.workflowsData[names[i]].compare[names[j]] = comp;
+            if (comp.isSame) {
+              this.workflowsData[names[i]].sameAs.push(names[j]);
+              if (!this.workflowsData[names[j]].sameAs.includes(names[i])) {
+                this.workflowsData[names[j]].sameAs.push(names[i]);
+              }
+            }
+            if (comp.isMaybeSame) {
+              this.workflowsData[names[i]].maybeSameAs.push(names[j]);
+              if (!this.workflowsData[names[j]].maybeSameAs.includes(names[i])) {
+                this.workflowsData[names[j]].maybeSameAs.push(names[i]);
+              }
+            }
+          }
+        }
+        console.log("Workflow comparison result:", this.workflowsData);
+        this.displayResults();
+      });
+    }
+
+    // Вивід результатів сканування на сторінку
+    displayResults() {
+        // Пройдемося по всіх елементах в табличці та допишемо в перший стопвчик додаткову інформацію
+        // Додаткова інформація:
+        // - перелік станів в цьому workflow
+        // - перелік workflow, які є повністю однакові з цим
+        // - переклік workflow, які можливо є схожими з цим
+        // В переліках workflow будемо виводити посилання на них.
+        // Посилання береться з 'ul.operations-list a[data-operation="view"]'
+        
+        // Спочатку пройдемося по всіх рядках та зберемо собі структуру даних з елементами, посиланнями та назвами
+        // а також видалимо поточну інформацію, якщо вона вже є
+        const rows = document.querySelectorAll(this.getRowsSelector());
+        const infoRows = [];
+        for (let i = 1; i < rows.length; i++) {
+            const tr = rows[i];
+            const td = tr.querySelector(this.getIdSelectorForRow());
+            if (!td) continue;
+            const name = td.innerText.trim();
+            if (!name) continue;
+            const data = this.workflowsData[name];
+            if (!data) continue;
+            const link = tr.querySelector('ul.operations-list a[data-operation="view"]');
+            if (!link) continue;
+            const secondaryText = tr.querySelector('td:first-child div.secondary-text');
+            if (!secondaryText) continue;
+            infoRows.push({ tr, name, data, link, secondaryText });
+            // Видаляємо попередню інформацію
+            const oldInfo = secondaryText.querySelector('.jira-cleaner-workflow-info');
+            if (oldInfo) oldInfo.remove();
+        }
+
+        // Тепер пройдемося по всіх рядках та додамо інформацію
+        // А так як ми вже все зібрали - то зможемо одразу додавати іншні workflow як посилання
+        for (let i = 0; i < infoRows.length; i++) {
+            const { tr, name, data, link, secondaryText } = infoRows[i];
+            const infoElem = document.createElement('div');
+            infoElem.className = 'jira-cleaner-workflow-info';
+            const statusesElem = document.createElement('div');
+            statusesElem.className = 'statuses';
+            statusesElem.innerHTML = `<strong>Statuses</strong>: `;
+            // add class "aui-lozenge status-default" to each status
+            data.parsed.statuses.forEach((s) => {
+                const span = document.createElement('span');
+                span.className = 'aui-lozenge status-default';
+                span.innerText = s;
+                statusesElem.appendChild(span);
+            });
+            infoElem.appendChild(statusesElem);
+            if (data.sameAs.length > 0) {
+                const sameAsElem = document.createElement('div');
+                sameAsElem.className = 'same-as';
+                sameAsElem.innerHTML = "<strong>Same as:</strong> ";
+                const list = document.createElement('ul');
+                data.sameAs.forEach((n) => {
+                    const a = document.createElement('a');
+                    // Шукаємо в infoRows по імені та беремо посилання з link
+                    const link = infoRows.find((r) => r.name === n).link;
+                    a.href = link.href;
+                    a.innerText = n;
+                    const li = document.createElement('li');
+                    li.appendChild(a);
+                    list.appendChild(li);
+                });
+                sameAsElem.appendChild(list);
+                infoElem.appendChild(sameAsElem);
+            }
+            if (data.maybeSameAs.length > 0) {
+                const sameAsElem = document.createElement('div');
+                sameAsElem.className = 'same-as';
+                sameAsElem.innerHTML = "<strong>Maybe same as:</strong> ";
+                const list = document.createElement('ul');
+                data.maybeSameAs.forEach((n) => {
+                    // Пропускаємо ті, які точно однакові
+                    if (data.sameAs.includes(n)) return;
+                    const a = document.createElement('a');
+                    // Шукаємо в infoRows по імені та беремо посилання з link
+                    const link = infoRows.find((r) => r.name === n).link;
+                    a.href = link.href;
+                    a.innerText = n;
+                    const li = document.createElement('li');
+                    li.appendChild(a);
+                    list.appendChild(li);
+                });
+                // Якщо список пустий - то не виводимо
+                if (list.children.length === 0) continue;
+                sameAsElem.appendChild(list);
+                infoElem.appendChild(sameAsElem);
+            }
+            secondaryText.appendChild(infoElem);
+        }
+    }
+  }
+
   // --- Final Logic: Create and Launch Cleaners ---
   const cleaners = [
     new InactiveWorkflowsCleaner(),
@@ -599,6 +1056,7 @@
     new StatusesCleaner(),
     new IssueTypeSchemesCleaner(),
     new IssueTypeScreenSchemesCleaner(),
+    new WorkflowsDuplicateScanner(),
   ];
   // On page load, check which cleaner is active and add its UI.
   function bootstrap() {
