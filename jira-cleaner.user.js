@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Cleaner and Workflow Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.4
 // @description  Automated cleaning and scanning for Jira pages with UI controls.
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-cleaner.user.js
@@ -718,6 +718,7 @@
     parseWorkflow(xml) {
       const parsed = {};
 
+      parsed.transitions = [];
       parsed.statuses = [];
 
       // Розбираємо initial-actions
@@ -728,7 +729,7 @@
         for (let i = 0; i < actionElems.length; i++) {
           const action = this.parseAction(actionElems[i]);
           parsed.initialActions.push(action);
-          parsed.statuses.push(action.name);
+          parsed.transitions.push(action.name);
         }
       }
 
@@ -740,7 +741,7 @@
         for (let i = 0; i < actionElems.length; i++) {
           const action = this.parseAction(actionElems[i]);
           parsed.commonActions.push(action);
-          parsed.statuses.push(action.name);
+          parsed.transitions.push(action.name);
         }
       }
 
@@ -755,6 +756,8 @@
             name: stepElems[i].getAttribute("name"),
             actions: [],
           };
+          parsed.statuses.push(step.name);
+
           const actionsElem = stepElems[i].getElementsByTagName("actions")[0];
           if (actionsElem) {
             // Можуть бути як <action>, так і <common-action>
@@ -765,14 +768,23 @@
             const commonActionElems =
               actionsElem.getElementsByTagName("common-action");
             for (let j = 0; j < commonActionElems.length; j++) {
-              // Для common-action збережемо тільки id
-              step.actions.push({
-                id: commonActionElems[j].getAttribute("id"),
-              });
+              // Для common-action - шукаємо їх по id в commonActions і додаємо
+              const addCommonActionWithId = commonActionElems[j].getAttribute("id");
+              for (let k = 0; k < parsed.commonActions.length; k++) {
+                if (
+                  parsed.commonActions[k].id === addCommonActionWithId
+                ) {
+                  step.actions.push(parsed.commonActions[k]);
+                  break;
+                }
+              }
             }
           }
 
-          parsed.statuses.push(step.name);
+          for (let j = 0; j < step.actions.length; j++) {
+            parsed.transitions.push(step.actions[j].name);
+          }
+          
           parsed.steps.push(step);
         }
       }
@@ -868,12 +880,11 @@
         });
       });
       const bHasSameStatusesIgnoreSymbols =
-        !bHasUniqueStatuses &&
+        parsed1.statuses.length == parsed2.statuses.length &&
         Object.keys(statusCompare).every((k) => {
           return statusCompare[k];
         });
-      const isMaybeSame =
-        isSameButDiffActionsOrderIgnoreName && bHasSameStatusesIgnoreSymbols;
+      const isMaybeSame = bHasSameStatusesIgnoreSymbols;
 
       return {
         isSame,
@@ -1063,17 +1074,30 @@
         const { tr, name, data, link, secondaryText } = infoRows[i];
         const infoElem = document.createElement("div");
         infoElem.className = "jira-cleaner-workflow-info";
+
         const statusesElem = document.createElement("div");
         statusesElem.className = "statuses";
         statusesElem.innerHTML = `<strong>Statuses</strong>: `;
-        // add class "aui-lozenge status-default" to each status
         data.parsed.statuses.forEach((s) => {
           const span = document.createElement("span");
-          span.className = "aui-lozenge status-default " + getColor(s);
+          span.className = "aui-lozenge " + getColor(s);
           span.innerText = s;
           statusesElem.appendChild(span);
         });
         infoElem.appendChild(statusesElem);
+
+        // Також виводимо всі transitions в статусі
+        const transitionsElem = document.createElement("div");
+        transitionsElem.className = "transitions";
+        transitionsElem.innerHTML = `<strong>Transitions</strong>: `;
+        data.parsed.transitions.forEach((t) => {
+          const span = document.createElement("span");
+          span.className = "aui-lozenge aui-lozenge-subtle";
+          span.innerText = t;
+          transitionsElem.appendChild(span);
+        });
+        infoElem.appendChild(transitionsElem);
+
         if (data.sameAs.length > 0) {
           const sameAsElem = document.createElement("div");
           sameAsElem.className = "same-as";
@@ -1092,6 +1116,7 @@
           sameAsElem.appendChild(list);
           infoElem.appendChild(sameAsElem);
         }
+
         if (data.maybeSameAs.length > 0) {
           const sameAsElem = document.createElement("div");
           sameAsElem.className = "same-as";
@@ -1114,6 +1139,7 @@
           sameAsElem.appendChild(list);
           infoElem.appendChild(sameAsElem);
         }
+
         secondaryText.appendChild(infoElem);
       }
     }
