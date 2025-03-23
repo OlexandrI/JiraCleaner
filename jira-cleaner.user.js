@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Cleaner and Workflow Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.1.0
 // @description  Automated cleaning and scanning for Jira pages with UI controls.
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-cleaner.user.js
@@ -788,6 +788,10 @@
           parsed.steps.push(step);
         }
       }
+
+      // Тепер слід видалити дублікати серед transitions та statuses
+      parsed.transitions = parsed.transitions.filter((v, i, a) => a.indexOf(v) === i);
+      parsed.statuses = parsed.statuses.filter((v, i, a) => a.indexOf(v) === i);
 
       return parsed;
     }
