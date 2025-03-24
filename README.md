@@ -69,7 +69,22 @@ This Tampermonkey user script automates cleaning and scanning tasks on Jira admi
 
 ## Changelog
 
-- **v1.0.2:**  
+### v1.1.1
+- **Disable Debugging Mode:**  
+  Debug mode is now disabled by default so that real cleaning operations are executed without interference.
+
+### v1.1.0
+- **Remove Duplicate Transitions:**  
+  The script now filters out duplicate transitions during workflow parsing.
+
+### v1.0.4
+
+- **Enhanced Workflow Parsing:**  
+  - Transitions are no longer tracked as statuses.
+  - A dedicated transitions list is now shown in the scan results.
+
+### v1.0.2:
+
   - Added detailed duplicate scanning for workflows.
   - Implemented full XML parsing and comparison for workflow actions, validators, and post-functions.
   - Enhanced UI to display scanning results directly within Jira pages.
