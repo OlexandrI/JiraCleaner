@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -680,7 +680,7 @@
             : null;
           if (spanIn) {
             if (spanIn.innerText === "None") spanIn.innerText = "";
-            else spanIn.innerText = " | ";
+            else spanIn.innerText += " | ";
             // Add hourglass emoji
             spanIn.innerText += "⏳";
             spanIn.innerText += timeText;
