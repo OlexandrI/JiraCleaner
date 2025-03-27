@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Cleaner and Workflow Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.1.2
 // @description  Automated cleaning and scanning for Jira pages with UI controls.
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-cleaner.user.js
