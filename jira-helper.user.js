@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -673,7 +673,7 @@
           if (spentMinutes > 0) timeText += ` ${spentMinutes}m`;
 
           let container = issue.issue.querySelector(
-            ".ghx-extra-fields .ghx-extra-field-row:first-child"
+            ".ghx-extra-fields .ghx-extra-field-row:last-child"
           );
           let spanIn = container
             ? container.querySelector("span.ghx-extra-field-content")
