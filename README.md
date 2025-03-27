@@ -69,6 +69,11 @@ This Tampermonkey user script automates cleaning and scanning tasks on Jira admi
 
 ## Changelog
 
+### v1.1.5
+
+- Fix removing Statuses
+- Add checking popup error and auto skip blocked from deleting items
+
 ### v1.1.4
 
 - Fix Clean/Stop button status change on last iteration of cleaning after page reload

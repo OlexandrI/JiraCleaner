@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Cleaner and Workflow Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.1.4
+// @version      1.1.5
 // @description  Automated cleaning and scanning for Jira pages with UI controls.
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-cleaner.user.js
@@ -163,7 +163,7 @@
     // Приклад: JiraCleanerEntity.addButtonToPageHeader("Clean", () => this.clean());
     static addButtonToPageHeader(text, onClick, additionalClass = "") {
       const header = document.querySelector(
-        "header.aui-page-header div.aui-page-header-actions div.aui-buttons"
+        ".aui-page-header .aui-page-header-actions .aui-buttons"
       );
       if (!header) {
         console.error("Page Header not found");
@@ -220,6 +220,9 @@
     ) {
       // Знаходимо список із класом "operations-list"
       let cell = row.querySelector("ul.operations-list");
+      if (!cell) {
+        cell = row.querySelector("td.action ul.menu");
+      }
       if (!cell) {
         console.warn("Operations cell not found");
         return false;
@@ -430,6 +433,21 @@
       return false;
     }
 
+    checkPopupError(id = null) {
+      const error = document.querySelector("#dialog-form .aui-message-error");
+      if (error) {
+        if (id) {
+          console.warn("Error deleting item", id);
+          // Промаркуємо елемент як заблокований, щоб не видаляти його знову
+          this.setItemLocked(id, true);
+          // Та продовжимо очищення, перезавантаживши сторінку
+          document.location.reload();
+        }
+        return true;
+      }
+      return false;
+    }
+
     // Внутрішній метод очищення одного рядка
     // Викликається для кожного рядка, якщо він не заблокований
     // Слід визначити цей метод в класі-нащадку
@@ -445,8 +463,12 @@
         tryClick = () => {
           const btn = document.querySelector(self.getPopupSubmitSelector());
           if (btn) {
+            // Перевіримо, чи немає помилок із видаленням
+            if (self.checkPopupError()) return;
             if (self.debug) console.log("Approve delete");
             else btn.click();
+            // Після підтвердження попапу - поставимо таймер перевірити чи немає таки помилки
+            setTimeout(() => self.checkPopupError(id), 500);
             return;
           }
           if (guard-- <= 0) {
