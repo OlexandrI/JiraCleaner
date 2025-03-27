@@ -69,6 +69,12 @@ This Tampermonkey user script automates cleaning and scanning tasks on Jira admi
 
 ## Changelog
 
+### v1.1.3
+
+- Fixed removing worklfow schemas stuck
+- Now Clean/Stop button correctly updates state without reload page
+- Fixed duplicating "Lock" on items
+
 ### v1.1.2
 
 - Fixed auto click popup when removing inactive workflows

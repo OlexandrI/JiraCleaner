@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Cleaner and Workflow Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.1.2
+// @version      1.1.3
 // @description  Automated cleaning and scanning for Jira pages with UI controls.
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-cleaner.user.js
@@ -70,6 +70,7 @@
       this.clean_internal_counter = 10;
       this.removeAction = "Delete.jsp";
       this.debug = false;
+      this.myBtn = null;
     }
 
     set(key, value) {
@@ -173,7 +174,7 @@
       button.innerText = text;
       button.addEventListener("click", onClick);
       header.appendChild(button);
-      return true;
+      return button;
     }
 
     // Метод, що додає чекбокс в рядок таблиці
@@ -183,7 +184,7 @@
       // Знаходимо список із класом "operations-list"
       let cell = row.querySelector("ul.operations-list");
       if (!cell) {
-        console.error("Operations cell not found");
+        console.warn("Operations cell not found");
         return false;
       }
       const checkbox = document.createElement("input");
@@ -199,7 +200,7 @@
       }
       cell.appendChild(checkbox);
       cell.appendChild(label);
-      return true;
+      return cell;
     }
 
     // Метод, що додає посилання з дією в рядок таблиці
@@ -220,7 +221,7 @@
       // Знаходимо список із класом "operations-list"
       let cell = row.querySelector("ul.operations-list");
       if (!cell) {
-        console.error("Operations cell not found");
+        console.warn("Operations cell not found");
         return false;
       }
 
@@ -252,13 +253,17 @@
       const li = document.createElement("li");
       li.appendChild(link);
       cell.appendChild(li);
-      return true;
+      return link;
     }
 
     // Додавання UI для конкретної сутності
     addUI_perEntity(tr, id) {
       const self = this;
-      JiraCleanerEntity.addActionToTableRow(
+      const prevLink = tr.querySelector("li:has(>a.jira-cleaner-lock-link)");
+      if (prevLink) {
+        prevLink.remove();
+      }
+      const link = JiraCleanerEntity.addActionToTableRow(
         tr,
         "Unlock",
         () => {
@@ -271,28 +276,47 @@
           return self.isItemLocked(id);
         }
       );
+      if (link) {
+        link.className += " jira-cleaner-lock-link";
+      }
+    }
+
+    onMyBtnClick() {
+      if (this.isCleanRunning()) {
+        this.abort();
+      } else {
+        this.clean();
+      }
+
+      // Temporary disabled to prevent double click
+      if (this.myBtn) {
+        this.myBtn.disabled = true;
+        const self = this;
+        setTimeout(() => (self.myBtn.disabled = false), 750);
+      }
+
+      // Update UI after click
+      this.updateUI();
     }
 
     // Метод, що додає UI (наприклад, кнопку Clean та lock checkbox)
     addUI() {
       const self = this;
       // Додаємо кнопку Clean/Stop
-      if (this.isCleanRunning()) {
-        JiraCleanerEntity.addButtonToPageHeader(
-          "Stop Clean",
-          () => {
-            self.abort();
-          },
-          "aui-button-primary"
-        );
-      } else {
-        JiraCleanerEntity.addButtonToPageHeader("Clean", () => self.clean());
-      }
-
+      this.myBtn = JiraCleanerEntity.addButtonToPageHeader("Clean", () =>
+        self.onMyBtnClick()
+      );
       this.updateUI();
     }
 
     updateUI() {
+      if (this.myBtn) {
+        this.myBtn.innerText = this.isCleanRunning() ? "Stop Clean" : "Clean";
+        this.myBtn.className = this.isCleanRunning()
+          ? "aui-button aui-button-primary"
+          : "aui-button";
+      }
+
       if (this.hasDynamicData()) {
         if (document.querySelectorAll(this.getRowsSelector()).length < 2) {
           const self = this;
@@ -311,7 +335,7 @@
       // Для кожного рядка таблиці додаємо UI
       rows.forEach((tr, i) => {
         // Пропускаємо перший рядок, так як це заголовок таблиці
-        if (i === 0) return;
+        if (tr.parentElement.tagName.toLowerCase() === "thead") return;
         // Беремо першу колонку рядка і текст з неї як ідентифікатор об'єкта
         const td = tr.querySelector(this.getIdSelectorForRow());
         const id = td ? td.innerText : "" + i;
@@ -335,8 +359,7 @@
       this.set("running", "true");
       console.log(`Cleaning ${this.name}...`);
 
-      if (!this.clean_internal())
-      {
+      if (!this.clean_internal()) {
         this.abort();
       }
     }
@@ -447,8 +470,10 @@
     }
 
     isActive() {
-      return document.querySelector("#active-workflows-module") !== null
-          || document.querySelector("#inactive-workflows-module") !== null;
+      return (
+        document.querySelector("#active-workflows-module") !== null ||
+        document.querySelector("#inactive-workflows-module") !== null
+      );
     }
 
     hasApprovePopup() {
@@ -467,8 +492,9 @@
       this.selector = "#WorkflowSchemes table.list-workflow-table";
       this.clean_internal_counter = 3;
     }
+
     getDeleteActionSelectorForRow() {
-      return 'ul.operations-list li:last-child a[href*="Delete"]';
+      return 'ul.operations-list li a[href*="Delete"]';
     }
 
     hasApprovePopup() {
@@ -567,7 +593,7 @@
     }
 
     getDeleteActionSelectorForRow() {
-      return "ul.operations-list li:last-child a";
+      return "ul.operations-list li a";
     }
 
     hasApprovePage() {
@@ -781,11 +807,10 @@
               actionsElem.getElementsByTagName("common-action");
             for (let j = 0; j < commonActionElems.length; j++) {
               // Для common-action - шукаємо їх по id в commonActions і додаємо
-              const addCommonActionWithId = commonActionElems[j].getAttribute("id");
+              const addCommonActionWithId =
+                commonActionElems[j].getAttribute("id");
               for (let k = 0; k < parsed.commonActions.length; k++) {
-                if (
-                  parsed.commonActions[k].id === addCommonActionWithId
-                ) {
+                if (parsed.commonActions[k].id === addCommonActionWithId) {
                   step.actions.push(parsed.commonActions[k]);
                   break;
                 }
@@ -796,13 +821,15 @@
           for (let j = 0; j < step.actions.length; j++) {
             parsed.transitions.push(step.actions[j].name);
           }
-          
+
           parsed.steps.push(step);
         }
       }
 
       // Тепер слід видалити дублікати серед transitions та statuses
-      parsed.transitions = parsed.transitions.filter((v, i, a) => a.indexOf(v) === i);
+      parsed.transitions = parsed.transitions.filter(
+        (v, i, a) => a.indexOf(v) === i
+      );
       parsed.statuses = parsed.statuses.filter((v, i, a) => a.indexOf(v) === i);
 
       return parsed;
