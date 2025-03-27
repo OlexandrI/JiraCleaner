@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Cleaner and Workflow Scanner
 // @namespace    http://tampermonkey.net/
-// @version      1.1.3
+// @version      1.1.4
 // @description  Automated cleaning and scanning for Jira pages with UI controls.
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-cleaner.user.js
@@ -346,6 +346,7 @@
     abort() {
       this.set("running", "false");
       console.log(`Aborted cleaning ${this.name}`);
+      this.updateUI();
     }
 
     // Метод очищення, який запускається при натисканні Clean

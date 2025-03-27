@@ -69,6 +69,10 @@ This Tampermonkey user script automates cleaning and scanning tasks on Jira admi
 
 ## Changelog
 
+### v1.1.4
+
+- Fix Clean/Stop button status change on last iteration of cleaning after page reload
+
 ### v1.1.3
 
 - Fixed removing worklfow schemas stuck
