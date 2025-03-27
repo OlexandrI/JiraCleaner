@@ -319,6 +319,11 @@
       });
     }
 
+    abort() {
+      this.set("running", "false");
+      console.log(`Aborted cleaning ${this.name}`);
+    }
+
     // Метод очищення, який запускається при натисканні Clean
     clean() {
       if (this.isCleanRunning()) {
@@ -330,19 +335,17 @@
       this.set("running", "true");
       console.log(`Cleaning ${this.name}...`);
 
-      this.clean_internal();
-    }
-
-    abort() {
-      this.set("running", "false");
-      console.log(`Aborted cleaning ${this.name}`);
+      if (!this.clean_internal())
+      {
+        this.abort();
+      }
     }
 
     // Внутрішній метод очищення
     // Викликається як ітеративний метод, поки не скинути флаг running
     // Повертає false - якщо очищення завершено, в іншому випадку - true
     clean_internal() {
-      if (!this.isCleanRunning()) return;
+      if (!this.isCleanRunning()) return false;
 
       if (this.hasApprovePage() && this.isApproveDeleteActive()) {
         if (this.debug) console.log("Approve delete");
@@ -364,9 +367,9 @@
 
       // Беремо всі рядки таблиці
       const rows = document.querySelectorAll(this.getRowsSelector());
-      if (!rows) {
+      if (!rows || rows.length < 1) {
         console.warn("Items not found");
-        this.set("running", "false");
+        this.abort();
         return false;
       }
 
@@ -375,8 +378,9 @@
       // Якщо ні - викликаємо метод видалення
       // Але ми викликаємо видалення не більше ніж для 1 елемента за раз
       // Завжди пропускаємо перший рядок, так як це заголовок таблиці
-      for (let i = 1; i < rows.length; i++) {
+      for (let i = 0; i < rows.length; i++) {
         const tr = rows[i];
+        if (tr.parentElement.tagName.toLowerCase() === "thead") continue;
         const td = tr.querySelector(this.getIdSelectorForRow());
         const id = td ? td.innerText : "" + i;
         if (!this.canRowBeDeleted(tr, id)) continue;
@@ -398,7 +402,7 @@
         }
       }
 
-      this.set("running", "false");
+      this.abort();
       return false;
     }
 
@@ -411,20 +415,23 @@
       if (action) action.click();
       // Якщо є підтвердження - клікаємо на підтвердження
       if (this.hasApprovePopup()) {
-        function tryClick() {
-          const btn = document.getElementById(this.getPopupSubmitSelector());
+        const self = this;
+        let guard = 10;
+        let tryClick;
+        tryClick = () => {
+          const btn = document.querySelector(self.getPopupSubmitSelector());
           if (btn) {
-            if (this.debug) console.log("Approve delete");
+            if (self.debug) console.log("Approve delete");
             else btn.click();
-            return true;
+            return;
           }
-          return false;
-        }
-        (function timerFn() {
-          if (!tryClick()) {
-            setTimeout(timerFn, 250);
+          if (guard-- <= 0) {
+            console.error("Approve button not found");
+            return;
           }
-        })();
+          setTimeout(tryClick, 250);
+        };
+        tryClick();
       }
     }
   }
@@ -437,6 +444,11 @@
       super("Inactive Workflows");
       this.selector = "#inactive-workflows-table";
       this.clean_internal_counter = 3;
+    }
+
+    isActive() {
+      return document.querySelector("#active-workflows-module") !== null
+          || document.querySelector("#inactive-workflows-module") !== null;
     }
 
     hasApprovePopup() {
