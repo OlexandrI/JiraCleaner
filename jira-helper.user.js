@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.0.5
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -35,7 +35,7 @@
     // Check if key exists
     // @param key - key to check
     has(key) {
-      return this.get(StorageController.fixKey(key)) !== null;
+      return this.get_internal(key) !== null;
     }
 
     // Set expiration time for key
@@ -59,10 +59,10 @@
     // @note If key not have expiration time - return false
     isExpired(key) {
       const expiration = this.get_internal(key + "_expiration");
-      if (!expiration) {
+      if (expiration === null) {
         return false;
       }
-      return new Date().getTime() > expiration;
+      return new Date().getTime() > parseInt(expiration, 10);
     }
 
     // Check if key exists and not expired
@@ -305,7 +305,7 @@
           const data = JSON.parse(str);
           issuesCache[issueKey] = data;
           if (saveIssuesDataToLocalStorage) {
-            const randMinutes = Math.floor(Math.random() * 5) + 1;
+            const randMinutes = Math.floor(Math.random() * 3) + 2;
             storage.setObject(issueKey, data, randMinutes * 60);
           }
           cb(data);
