@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -12,6 +12,8 @@
 
 (function () {
   "use strict";
+
+  const saveIssuesDataToLocalStorage = true;
 
   // Ми будемо зберігати налаштування та пропорці про запуск очищення в localStorage
   // Також зберігатимемо заблоковані елементи, щоб не очищати їх
@@ -24,11 +26,71 @@
       return key.toLowerCase().replace(/\s/g, "_");
     }
 
-    set(key, value) {
-      localStorage.setItem(this.prefix + StorageController.fixKey(key), value);
+    // Check if key exists
+    // @param key - key to check
+    has(key) {
+      return this.get(StorageController.fixKey(key)) !== null;
     }
 
+    // Set expiration time for key
+    // @param key - key to set expiration
+    // @param expiration - expiration time in seconds
+    setExpiration(key, expiration) {
+      // Get Now time and add expiration time
+      const expireTimePoint = new Date().getTime() + expiration * 1000;
+      this.set(key + "_expiration", expireTimePoint);
+    }
+
+    // Expire key now
+    // @param key - key to expire
+    expireIt(key) {
+      this.set(key, null);
+      this.set(key + "_expiration", null);
+    }
+
+    // Check if key is expired
+    // @param key - key to check
+    // @note If key not have expiration time - return false
+    isExpired(key) {
+      const expiration = this.get(key + "_expiration");
+      if (expiration === null) {
+        return false;
+      }
+      return new Date().getTime() > expiration;
+    }
+
+    // Check if key exists and not expired
+    isValid(key) {
+      return this.has(key) && !this.isExpired(key);
+    }
+
+    // Set data to local storage
+    // @param key - key to set
+    // @param value - value to set (should be string)
+    // @param expiration - expiration time in seconds
+    set(key, value, expiration = null) {
+      localStorage.setItem(this.prefix + StorageController.fixKey(key), value);
+      if (expiration !== null) {
+        this.setExpiration(key, expiration);
+      }
+    }
+
+    // Set object to local storage
+    // @param key - key to set
+    // @param value - value to set
+    // @param expiration - expiration time in seconds
+    setObject(key, value, expiration = null) {
+      this.set(key, JSON.stringify(value), expiration);
+    }
+
+    // Get data from local storage
+    // @param key - key to get
+    // @param defaultValue - default value if key not found
+    // @return value (always string) or default value
     get(key, defaultValue = null) {
+      if (this.isExpired(key)) {
+        return defaultValue;
+      }
       const finalKey = this.prefix + StorageController.fixKey(key);
       const result = localStorage.getItem(finalKey);
       if (result === null) {
@@ -37,8 +99,16 @@
       return result;
     }
 
-    has(key) {
-      return this.get(StorageController.fixKey(key)) !== null;
+    // Get object from local storage
+    // @param key - key to get
+    // @param defaultValue - default value if key not found
+    // @return value or default value
+    getObject(key, defaultValue = null) {
+      const result = this.get(key, defaultValue);
+      if (result === null || typeof result !== "string") {
+        return defaultValue;
+      }
+      return JSON.parse(result);
     }
   }
 
@@ -63,13 +133,23 @@
     return typeof JIRA === "object";
   }
 
+  function BreakExecution(fn, silence = true) {
+    setTimeout(() => {
+      try {
+        fn();
+      } catch (e) {
+        if (!silence) console.error("Error in function", e);
+      }
+    }, 1);
+  }
+
   function runOrDelay(check, fn, firstDelay = false) {
     if (document.readyState !== "complete" || !check() || firstDelay) {
       setTimeout(function () {
         runOrDelay(check, fn);
       }, 200);
     } else {
-      fn();
+      BreakExecution(fn, false);
     }
   }
 
@@ -180,9 +260,14 @@
   const issuesCache = {};
   function getIssueInfo(issueKey, cb) {
     if (issuesCache.hasOwnProperty(issueKey)) {
-      setTimeout(() => {
-        cb(issuesCache[issueKey]);
-      }, 1);
+      BreakExecution(() => cb(issuesCache[issueKey]));
+      return;
+    }
+
+    if (saveIssuesDataToLocalStorage && storage.isValid(issueKey)) {
+      const data = storage.getObject(issueKey);
+      issuesCache[issueKey] = data;
+      BreakExecution(() => cb(data));
       return;
     }
 
@@ -209,6 +294,10 @@
         try {
           const data = JSON.parse(str);
           issuesCache[issueKey] = data;
+          if (saveIssuesDataToLocalStorage) {
+            const randMinutes = Math.floor(Math.random() * 5) + 1;
+            storage.setObject(issueKey, data, randMinutes * 60);
+          }
           cb(data);
         } catch (err) {
           console.error("Error parsing JSON", err);
@@ -273,13 +362,13 @@
       return false;
     }
 
-    setup() {}
+    setup() { }
 
-    setupUI() {}
+    setupUI() { }
 
-    update() {}
+    update() { }
 
-    updateUI() {}
+    updateUI() { }
 
     init() {
       if (this.waitJIRAActive() && !JiraIsReady()) {
@@ -297,8 +386,10 @@
       if (this.updateOnIssueRefreshed()) {
         const self = this;
         JIRA.bind(JIRA.Events.ISSUE_REFRESHED, (e, context, reason) => {
-          self.update();
-          self.updateUI();
+          BreakExecution(() => {
+            self.update();
+            self.updateUI();
+          });
         });
       }
     }
@@ -378,6 +469,10 @@
           this.makeCopyButton(issue);
         }
       });
+    }
+
+    periodicUpdate() {
+      return 2000;
     }
   }
 
