@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -265,6 +265,10 @@
 
   const issuesCache = {};
   function getIssueInfo(issueKey, cb) {
+    if (!issueKey) {
+      return;
+    }
+
     if (issuesCache.hasOwnProperty(issueKey)) {
       BreakExecution(() => cb(issuesCache[issueKey]));
       return;
