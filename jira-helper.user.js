@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -1148,7 +1148,7 @@
       super(
         "LongTimeInProgress",
         "Task has been in progress for too long",
-        RuleCriticality.Note
+        RuleCriticality.NOTE
       );
     }
 
