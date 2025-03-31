@@ -26,6 +26,12 @@
       return key.toLowerCase().replace(/\s/g, "_");
     }
 
+    get_internal(key) {
+      const finalKey = this.prefix + StorageController.fixKey(key);
+      const result = localStorage.getItem(finalKey);
+      return result;
+    }
+
     // Check if key exists
     // @param key - key to check
     has(key) {
@@ -52,8 +58,8 @@
     // @param key - key to check
     // @note If key not have expiration time - return false
     isExpired(key) {
-      const expiration = this.get(key + "_expiration");
-      if (expiration === null) {
+      const expiration = this.get_internal(key + "_expiration");
+      if (!expiration) {
         return false;
       }
       return new Date().getTime() > expiration;
