@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.1.2
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -357,20 +357,20 @@
   }
 
   const issuesCache = {};
-  function getIssueInfo(issueKey, cb) {
+  function getIssueInfo(issueKey, cb, errCb = null) {
     if (!issueKey) {
       return;
     }
 
     if (issuesCache.hasOwnProperty(issueKey)) {
-      BreakExecution(() => cb(issuesCache[issueKey]));
+      BreakExecution(() => cb(issuesCache[issueKey], issueKey));
       return;
     }
 
     if (saveIssuesDataToLocalStorage && storage.isValid(issueKey)) {
       const data = storage.getObject(issueKey);
       issuesCache[issueKey] = data;
-      BreakExecution(() => cb(data));
+      BreakExecution(() => cb(data, issueKey));
       return;
     }
 
@@ -396,18 +396,25 @@
       .then((str) => {
         try {
           const data = JSON.parse(str);
+          if (data.errorMessages && data.errorMessages.length > 0) {
+            console.error("Error fetching issue data", data.errorMessages);
+            if (errCb) errCb(data.errorMessages, issueKey);
+            return;
+          }
           issuesCache[issueKey] = data;
           if (saveIssuesDataToLocalStorage) {
             const randMinutes = Math.floor(Math.random() * 3) + 2;
             storage.setObject(issueKey, data, randMinutes * 60);
           }
-          cb(data);
+          cb(data, issueKey);
         } catch (err) {
           console.error("Error parsing JSON", err);
+          if (errCb) errCb(err, issueKey);
         }
       })
       .catch((err) => {
         console.error("Fetch issue error", err);
+        if (errCb) errCb(err, issueKey);
       });
   }
 
@@ -419,6 +426,7 @@
       this.storagePrefix = StorageController.fixKey(name) + "_";
       this.description = description;
       this.detectSelector = null;
+      this.activeForBoards = false;
     }
 
     // Save data to local storage
@@ -443,6 +451,9 @@
 
     // Check if the helper should be active on the current page
     isPage() {
+      if (this.activeForBoards) {
+        return window.location.pathname.includes("/secure/RapidBoard.jspa");
+      }
       return (
         this.detectSelector === null ||
         !!document.querySelector(this.detectSelector)
@@ -496,28 +507,33 @@
         });
       }
     }
-  }
 
-  // --- Helper: Copy issue key as link and issue summary to clipboard ---
-
-  class CopyIssueKeyHelper extends JiraHelper {
-    constructor() {
-      super("CopyIssueKey", "Copy issue key and summary to clipboard");
-      this.detectSelector = null;
-    }
-
-    getAllIssues() {
+    getAllIssues(bOnlyCards = false) {
       let result = [];
+      
+      const issueSelector = ".ghx-issue.js-issue" + (bOnlyCards ? "" : " .ghx-detail-issue, #issue-content");
 
       document
-        .querySelectorAll(".ghx-detail-issue, .ghx-issue, #issue-content")
+        .querySelectorAll(issueSelector)
         .forEach((issue) => {
-          const key = trim(
-            (
-              issue.querySelector(".ghx-key") ||
-              issue.querySelector(".aui-nav a.issue-link")
-            ).innerText
-          );
+          const keyPrefixElem = issue.querySelector(".ghx-key-link-project-key");
+          const keyIDElem = issue.querySelector(".ghx-key-link-issue-num");
+          const linkElem = issue.querySelector(".ghx-issue-details-link a");
+          const detailedLinkElem = issue.querySelector("#key-val");
+          let key = "";
+          if (keyPrefixElem && keyIDElem) {
+            key = trim(keyPrefixElem.innerText) + "-" + trim(keyIDElem.innerText);
+          } else
+          if (linkElem) {
+            key = trim(linkElem.innerText);
+          } else
+          if (detailedLinkElem) {
+            key = trim(detailedLinkElem.innerText);
+          }
+          key = key.replaceAll("--", "-"); // Fix double dashes in key
+
+          if (!key || key.length < 4) return;
+
           const summary = trim(
             (
               issue.querySelector(".ghx-summary") ||
@@ -534,6 +550,15 @@
         });
 
       return result;
+    }
+  }
+
+  // --- Helper: Copy issue key as link and issue summary to clipboard ---
+
+  class CopyIssueKeyHelper extends JiraHelper {
+    constructor() {
+      super("CopyIssueKey", "Copy issue key and summary to clipboard");
+      this.detectSelector = null;
     }
 
     makeCopyButton(issue) {
@@ -587,22 +612,7 @@
         "Show issue links icons in the corner of the cards"
       );
       this.cache = {};
-    }
-
-    getAllIssues() {
-      let result = [];
-
-      document.querySelectorAll(".ghx-issue.js-issue").forEach((issue) => {
-        const key = trim(
-          (
-            issue.querySelector(".ghx-key") ||
-            issue.querySelector(".aui-nav a.issue-link")
-          ).innerText
-        );
-        result.push({ issue, key });
-      });
-
-      return result;
+      this.activeForBoards = true;
     }
 
     getLinksColor(issueData) {
@@ -732,10 +742,6 @@
       }
     }
 
-    isPage() {
-      return window.location.pathname.includes("/secure/RapidBoard.jspa");
-    }
-
     periodicUpdate() {
       return 1000;
     }
@@ -745,7 +751,7 @@
     }
 
     updateUI() {
-      this.getAllIssues().forEach((issue) => {
+      this.getAllIssues(true).forEach((issue) => {
         if (this.cache.hasOwnProperty(issue.key)) {
           return;
         }
@@ -770,22 +776,7 @@
         "Show how many time task in progress"
       );
       this.cache = {};
-    }
-
-    getAllIssues() {
-      let result = [];
-
-      document.querySelectorAll(".ghx-issue.js-issue").forEach((issue) => {
-        const key = trim(
-          (
-            issue.querySelector(".ghx-key") ||
-            issue.querySelector(".aui-nav a.issue-link")
-          ).innerText
-        );
-        result.push({ issue, key });
-      });
-
-      return result;
+      this.activeForBoards = true;
     }
 
     static isInProgressStatus(statusStr) {
@@ -817,10 +808,6 @@
       }
     }
 
-    isPage() {
-      return window.location.pathname.includes("/secure/RapidBoard.jspa");
-    }
-
     periodicUpdate() {
       return 1000;
     }
@@ -830,7 +817,7 @@
     }
 
     updateUI() {
-      this.getAllIssues().forEach((issue) => {
+      this.getAllIssues(true).forEach((issue) => {
         if (this.cache.hasOwnProperty(issue.key)) {
           return;
         }
@@ -901,25 +888,12 @@
     constructor() {
       super("HighlightIssues", "Highlight issues based on rules");
       this.rules = [];
+      this.activeForBoards = true;
     }
 
     // Adds a rule to the list
     addRule(rule) {
       this.rules.push(rule);
-    }
-
-    getAllIssues() {
-      let result = [];
-      document.querySelectorAll(".ghx-issue.js-issue").forEach((issue) => {
-        const key = trim(
-          (
-            issue.querySelector(".ghx-key") ||
-            issue.querySelector(".aui-nav a.issue-link")
-          ).innerText
-        );
-        result.push({ issue, key });
-      });
-      return result;
     }
 
     applyRules(issue, criticality, tooltip) {
@@ -986,10 +960,6 @@
       }
     }
 
-    isPage() {
-      return window.location.pathname.includes("/secure/RapidBoard.jspa");
-    }
-
     periodicUpdate() {
       return 5000;
     }
@@ -999,7 +969,7 @@
     }
 
     updateUI() {
-      this.getAllIssues().forEach((issue) => {
+      this.getAllIssues(true).forEach((issue) => {
         if (!issue.issue.querySelector(".rule-icon")) {
           const self = this;
           getIssueInfo(issue.key, (data) => {
@@ -1047,7 +1017,7 @@
 
     isViolated(issueData) {
       const assignee = issueData.fields?.assignee;
-      if (!assignee) {
+      if (!assignee || !assignee.name || !assignee.active) {
         return "No assignee";
       }
       return false;
@@ -1075,11 +1045,7 @@
       for (let i = 0; i < changelog.length; i++) {
         for (let j = 0; j < changelog[i].items.length; j++) {
           if (changelog[i].items[j].field !== "status") continue;
-          if (
-            ShowTimeInProgressByStateHistoryHelper.isInProgressStatus(
-              changelog[i].items[j].toString
-            )
-          ) {
+          if (isInProgressStatus(changelog[i].items[j].toString)) {
             const changeDate = new Date(changelog[i].created);
             if (!lastChangeToInProgress || lastChangeToInProgress < changeDate) {
               lastChangeToInProgress = changeDate;
