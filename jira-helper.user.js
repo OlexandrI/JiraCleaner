@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.1.3
+// @version      1.1.4
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -569,7 +569,7 @@
     getAllIssues(bOnlyCards = false) {
       let result = [];
       
-      const issueSelector = ".ghx-issue.js-issue" + (bOnlyCards ? "" : " .ghx-detail-issue, #issue-content");
+      const issueSelector = bOnlyCards ? ".ghx-issue.js-issue" : ".ghx-issue.js-issue .ghx-detail-issue, .ghx-issue.js-issue .ghx-issue-content, #issue-content";
 
       document
         .querySelectorAll(issueSelector)
