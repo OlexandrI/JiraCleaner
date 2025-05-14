@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.1.2
+// @version      1.1.3
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -13,7 +13,7 @@
 (function () {
   "use strict";
 
-  const saveIssuesDataToLocalStorage = true;
+  const saveIssuesDataToLocalStorage = false;
 
   // Ми будемо зберігати налаштування та пропорці про запуск очищення в localStorage
   // Також зберігатимемо заблоковані елементи, щоб не очищати їх
@@ -75,9 +75,13 @@
     // @param value - value to set (should be string)
     // @param expiration - expiration time in seconds
     set(key, value, expiration = null) {
-      localStorage.setItem(this.prefix + StorageController.fixKey(key), value);
-      if (expiration !== null) {
-        this.setExpiration(key, expiration);
+      if (value === null) {
+        localStorage.removeItem(this.prefix + StorageController.fixKey(key));
+      } else {
+        localStorage.setItem(this.prefix + StorageController.fixKey(key), value);
+        if (expiration !== null) {
+          this.setExpiration(key, expiration);
+        }
       }
     }
 
@@ -116,9 +120,52 @@
       }
       return JSON.parse(result);
     }
+
+    /**
+     * Cleans up localStorage by removing items with keys that match a specified prefix.
+     *
+     * @param {string|function} prefix_key - A string representing the key prefix to match, 
+     * or a function that acts as a filter for keys. If a string is provided, it will be 
+     * appended to the object's prefix and used to match keys. If a function is provided, 
+     * it will be called with each key and should return `true` for keys to be removed.
+     */
+    clean(prefix_key) {
+      const prefix = this.prefix + (typeof prefix_key === "string" ? StorageController.fixKey(prefix_key) : "");
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(prefix)) {
+          if (typeof prefix_key !== "function" || prefix_key(key)) {
+            localStorage.removeItem(key);
+          }
+        }
+      }
+    }
+
+    /**
+     * Cleans up expired items from the localStorage.
+     * 
+     * This method iterates through all keys in the localStorage and checks for keys
+     * that end with "_expiration". If the current time exceeds the expiration time
+     * stored in the corresponding key, it removes both the expiration key and the
+     * associated data key from the localStorage.
+     */
+    cleanExpired() {
+      const checkTime = new Date().getTime();
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.endsWith("_expiration")) {
+          const expiration = parseInt(localStorage.getItem(key), 10);
+          if (checkTime > expiration) {
+            localStorage.removeItem(key);
+            localStorage.removeItem(key.substring(0, key.length - 12));
+          }
+        }
+      }
+    }
   }
 
   const storage = new StorageController();
+  storage.cleanExpired();
 
   function AddMainMenuButton(text, onClick, additionalClass = "") {
     const header = document.querySelector(
@@ -136,7 +183,7 @@
   }
 
   function JiraIsReady() {
-    return typeof JIRA === "object";
+    return window.hasOwnProperty("JIRA") && typeof window["JIRA"] === "object";
   }
 
   function BreakExecution(fn, silence = true) {
@@ -416,6 +463,17 @@
         console.error("Fetch issue error", err);
         if (errCb) errCb(err, issueKey);
       });
+  }
+
+  if (!saveIssuesDataToLocalStorage) {
+    // Clear all previously saved issues data
+    const regExIssueKey = /_[^-\d_]{2,}-\d{1,6}$/;
+    const cleanIssueCheckFun = (key) => {
+      const match = key.match(regExIssueKey);
+      if (!match) return false;
+      return true;
+    };
+    storage.clean(cleanIssueCheckFun);
   }
 
   // --- Base Class for a Helper Entity ---
