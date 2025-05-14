@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Helper Toolkit
 // @namespace    http://tampermonkey.net/
-// @version      1.1.4
+// @version      1.1.5
 // @description  Some simple useful features for Jira
 // @author       Oleksandr Berezovskyi
 // @downloadURL  https://github.com/OlexandrI/JiraCleaner/raw/refs/heads/main/jira-helper.user.js
@@ -557,12 +557,14 @@
 
       if (this.updateOnIssueRefreshed()) {
         const self = this;
-        JIRA.bind(JIRA.Events.ISSUE_REFRESHED, (e, context, reason) => {
-          BreakExecution(() => {
-            self.update();
-            self.updateUI();
+        if (window.hasOwnProperty("JIRA") && typeof window["JIRA"] === "object" && window["JIRA"].bind) {
+          JIRA.bind(JIRA.Events.ISSUE_REFRESHED, (e, context, reason) => {
+            BreakExecution(() => {
+              self.update();
+              self.updateUI();
+            });
           });
-        });
+        }
       }
     }
 
